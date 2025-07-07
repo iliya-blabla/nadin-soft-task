@@ -1,0 +1,97 @@
+stages:
+  - build
+  - test
+  - deploy
+
+default:
+  image:
+  before_script:
+    - docker login -u ${CI_REGISTRY_URL} -p ${CI_JOB_TOKEN} ${CI_REGISTRY}
+
+variables:
+  SSH_PORT: 22
+  SSH_USER: root
+  IMAGE_PATH: reg.doc-dooni.ir/nadin-soft
+  SERVICE_PATH: /opt/services/app.py
+  #BACKUP_PATH: /opt/services/BACKUP
+  VERSION: v1.0.6
+
+build-image-job:
+  stage: build
+  script:
+    - cd simple-app
+    - docker build -t ${IMAGE_PATH}/app-py:$CI_COMMIT_SHORT_SHA .
+    - docker push ${IMAGE_PATH}/app-py:$CI_COMMIT_SHORT_SHA
+  except:
+    - schedules
+  retry: 2
+
+test-image-job:
+  stage: test
+  needs: ["build-image-job"]
+  script:
+    - docker pull ${IMAGE_PATH}/app-py:${CI_COMMIT_SHORT_SHA}
+    - echo "unit test"
+    - docker tag ${IMAGE_PATH}/app-py:$CI_COMMIT_SHORT_SHA ${IMAGE_PATH}/app-py:${VERSION}
+    - docker push ${IMAGE_PATH}/app-py:${VERSION}
+  except:
+    - schedules
+
+scan-image-job:
+  stage: test
+  image: reg.doc-dooni.ir/nadin-soft/runner-image:trivy
+  needs: ["test-image-job"]
+  variables:
+    APP_IMAGE: ${IMAGE_PATH}/app-py:${VERSION}
+  script:
+    - trivy --exit-code 0 --cache-dir .trivycache/ --no-progress --format template --template "@/tmp/trivy-gitlab.tpl" -o gl-container-scanning-report.json $APP_IMAGE
+    - trivy --exit-code 1 --cache-dir .trivycache/ --severity CRITICAL --no-progress $APP_IMAGE
+  cache:
+    paths:
+      - /cache/.trivycache/
+  artifacts:
+    reports:
+      container_scaning: gl-container-scanning.json
+  except:
+    - schedules
+  retry: 2
+
+    #deploy-to-pre-production:
+
+
+
+deploy-to-production:
+  stage: deploy
+  image: reg.doc-dooni.ir/nadin-soft/runner-image:ssh
+  variables:
+    DOMAIN: production.doc-dooni.ir
+    SERVER_NAME: srv2.doc-dooni.ir
+    HOST_NAME: 
+  before_script:
+    - 'command -v ssh-agent >/dev/null || ( apk add --update openssh )'
+    - eval $(ssh-agent -s)
+    - chmod 400 '$SSH_PRIVATE_KEY'
+    - ssh-add "$SSH_PRIVATE_KEY"
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+  script:
+    - | ssh -o StrictHostKeyChecking=no -p ${SSH_PORT} ${SSH_USER}@${SERVER_NAME} " [ -d ${SERVICE_PATH} ] || mkdir -p ${SERVICE_PATH} "
+    sed -i "s/FQDN/${DOMAIN}/g" .env
+    sed -i "s/SERVER_NAME/${HOSTNAME}/g" .env
+    sed -i "s/PIPELINE_ID/${VERSION}/g" .env
+    scp -o StrictHostKeyChecking=no -P${SSH_PORT} .env ${SSH_USER}@${SERVER_NAME}:${SERVICE_PATH}/
+    scp -o StrictHostKeyChecking=no -P${SSH_PORT} compose.yml ${SSH_USER}@${SERVER_NAME}:${SERVICE_PATH}/
+    ssh -o StrictHostKeyChecking=no -p ${SSH_PORT} ${SSH_USER}@${SERVER_NAME} "
+      docker login -u $CI_REGISTRY_USER -p $CI_JOB_TOKEN $CI_REGISTRY
+      cd ${SERVICE_PATH}
+      docker compose pull
+      docker compose up -d
+      "
+  environment:
+    name: production
+    url: https://$DOMAIN
+  when: manual
+  except:
+    - schedules
+
+      #pre_production_job:

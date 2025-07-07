@@ -1,0 +1,13 @@
+---
+# Iptables configuration
+os_iptables_enabled: true
+iptables:
+  nic_access:
+    - web_net
+    - app_net
+  tcp_port:
+    - 80
+    - 443
+  #udp_port:
+  #ip_access:
+    #ip_range

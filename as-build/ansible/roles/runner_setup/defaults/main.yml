@@ -1,0 +1,10 @@
+---
+service_dir: "{{ project_dir }}/runner"
+runner_image_tag: v17.7.0
+
+runner:
+  concurrent: 5
+  name: Task-Runner
+  endpoint: https://git.doc-dooni.com
+  token: glrt-t1_g7QNanyQNrfysWRYbUxC
+  default_image: docker:latest

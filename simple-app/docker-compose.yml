@@ -11,13 +11,13 @@ networks:
     external: true
 services:
   pyapp:
-    #    image: ${REPOSITORY_NAME}/${IMAGE_DIRECTORY_NAME}/app-py:${VERSION}
-    image: app.py
+    image: ${REPOSITORY_NAME}/${IMAGE_DIRECTORY_NAME}/app-py:${VERSION}
+#    image: app.py
     restart: ${RESTART_POLICY}
     container_name: pyapp-${HOSTNAME}
     hostname: pyapp-${HOSTNAME}
-    ports:
-      - ${EXTERNAL_PORT}:1888
+#    ports:
+#      - ${EXTERNAL_PORT}:1888
     networks:
       - app_net
       - web_net
@@ -28,3 +28,14 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+    labels:
+      - "traefik.enable=true"
+
+      - "traefik.http.routers.http-app.rule=Host(`${DOMAIN_ADDRESS}`)"
+      - "traefik.http.routers.http-app.entrypoints=web"
+      - "traefik.http.routers.app.rule=Host(`${DOMAIN_ADDRESS}`)"
+      - "traefik.http.routers.app.entrypoints=web-secure"
+      - "traefik.http.routers.app.tls=true"
+      - "traefik.http.routers.khodesh.tls.certresolver=myresolver"
+      - "traefik.http.services.khodesh.loadBalancer.server.port=1888"
